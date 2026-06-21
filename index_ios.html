@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Money Tracker">
+<meta name="format-detection" content="telephone=no">
+<meta name="theme-color" content="#2196f3">
+
+<title>Money Tracker Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,Arial,sans-serif;background:#f4f6f9;margin:0;padding:20px;padding-top:calc(env(safe-area-inset-top) + 20px);padding-bottom:calc(env(safe-area-inset-bottom) + 20px)}
+.container{max-width:1200px;margin:auto}
+.card{background:#fff;padding:20px;border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,.1);margin-bottom:20px}
+h1{text-align:center}
+input,select,button{width:100%;padding:10px;margin:6px 0;border:1px solid #ccc;border-radius:8px;box-sizing:border-box}
+button{background:#2196f3;color:#fff;border:none;cursor:pointer}
+.summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:15px}
+.box{padding:20px;border-radius:12px;color:white;text-align:center}
+.income{background:#4caf50}.expense{background:#f44336}.balance{background:#ff9800}
+table{width:100%;border-collapse:collapse}
+th,td{border:1px solid #ddd;padding:8px;text-align:center}
+th{background:#2196f3;color:white}
+.delete-btn{background:#f44336}
+.dark{background:#1e1e1e;color:white}
+.dark .card{background:#2d2d2d}
+.dark table, .dark th, .dark td{border-color:#555}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>💰 ระบบบันทึกรายรับรายจ่าย</h1>
+
+<div class="card">
+<button onclick="toggleDarkMode()">🌙 Dark Mode</button>
+
+<label>ประเภท</label>
+<select id="type">
+<option value="income">รายรับ</option>
+<option value="expense">รายจ่าย</option>
+</select>
+
+<label>หมวดหมู่</label>
+<select id="category">
+<option>ค่าอาหาร</option>
+<option>ค่าเดินทาง</option>
+<option>ค่าเสื้อผ้า</option>
+<option>ค่าเครื่องสำอาง</option>
+<option>ค่าที่พัก</option>
+<option>ค่าโทรศัพท์</option>
+<option>ความบันเทิง</option>
+<option>สุขภาพ</option>
+<option>การศึกษา</option>
+<option>รายได้</option>
+<option>อื่นๆ</option>
+</select>
+
+<label>จำนวนเงิน</label>
+<input type="number" id="amount">
+
+<label>วันที่</label>
+<input type="date" id="date">
+
+<button onclick="addTransaction()">บันทึก</button>
+</div>
+
+<div class="summary">
+<div class="box income"><h3>รายรับ</h3><h2 id="incomeTotal">0</h2></div>
+<div class="box expense"><h3>รายจ่าย</h3><h2 id="expenseTotal">0</h2></div>
+<div class="box balance"><h3>คงเหลือ</h3><h2 id="balanceTotal">0</h2></div>
+</div>
+
+<div class="card">
+<h2>📊 กราฟรายจ่าย</h2>
+<select id="reportType" onchange="updateChart()">
+<option value="day">วันนี้</option>
+<option value="week">สัปดาห์นี้</option>
+<option value="month" selected>เดือนนี้</option>
+<option value="year">ปีนี้</option>
+</select>
+<canvas id="expenseChart"></canvas>
+</div>
+
+<div class="card">
+<input type="text" id="search" placeholder="ค้นหาหมวดหมู่..." onkeyup="render()">
+<button onclick="exportCSV()">📥 Export CSV</button>
+</div>
+
+<div class="card">
+<table>
+<thead>
+<tr>
+<th>วันที่</th>
+<th>ประเภท</th>
+<th>หมวดหมู่</th>
+<th>จำนวนเงิน</th>
+<th>ลบ</th>
+</tr>
+</thead>
+<tbody id="transactionTable"></tbody>
+</table>
+</div>
+</div>
+
+<script>
+let transactions=JSON.parse(localStorage.getItem("transactions"))||[];
+let chart;
+
+function addTransaction(){
+ const type=document.getElementById("type").value;
+ const category=document.getElementById("category").value;
+ const amount=parseFloat(document.getElementById("amount").value);
+ const date=document.getElementById("date").value;
+ if(!amount||!date){alert("กรอกข้อมูลให้ครบ");return;}
+ transactions.push({type,category,amount,date});
+ localStorage.setItem("transactions",JSON.stringify(transactions));
+ document.getElementById("amount").value="";
+ render();
+}
+
+function deleteTransaction(i){
+ transactions.splice(i,1);
+ localStorage.setItem("transactions",JSON.stringify(transactions));
+ render();
+}
+
+function render(){
+ const search=document.getElementById("search").value.toLowerCase();
+ const table=document.getElementById("transactionTable");
+ table.innerHTML="";
+ let income=0,expense=0;
+
+ transactions.forEach((t,i)=>{
+  if(t.type==="income") income+=Number(t.amount);
+  else expense+=Number(t.amount);
+
+  if(search && !t.category.toLowerCase().includes(search)) return;
+
+  table.innerHTML+=`
+  <tr>
+   <td>${t.date}</td>
+   <td>${t.type==="income"?"รายรับ":"รายจ่าย"}</td>
+   <td>${t.category}</td>
+   <td>${Number(t.amount).toLocaleString()} บาท</td>
+   <td><button class="delete-btn" onclick="deleteTransaction(${i})">ลบ</button></td>
+  </tr>`;
+ });
+
+ incomeTotal.innerText=income.toLocaleString()+" บาท";
+ expenseTotal.innerText=expense.toLocaleString()+" บาท";
+ balanceTotal.innerText=(income-expense).toLocaleString()+" บาท";
+
+ updateChart();
+}
+
+function updateChart(){
+ const type=document.getElementById("reportType").value;
+ const now=new Date();
+ let cat={};
+
+ transactions.filter(t=>t.type==="expense").forEach(t=>{
+   const d=new Date(t.date);
+   let ok=false;
+
+   if(type==="day") ok=d.toDateString()===now.toDateString();
+   if(type==="week"){
+      let s=new Date(); s.setDate(now.getDate()-7);
+      ok=d>=s&&d<=now;
+   }
+   if(type==="month") ok=d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear();
+   if(type==="year") ok=d.getFullYear()===now.getFullYear();
+
+   if(ok){
+      cat[t.category]=(cat[t.category]||0)+Number(t.amount);
+   }
+ });
+
+ if(chart) chart.destroy();
+
+ chart=new Chart(document.getElementById("expenseChart"),{
+   type:"pie",
+   data:{
+      labels:Object.keys(cat),
+      datasets:[{data:Object.values(cat)}]
+   }
+ });
+}
+
+function exportCSV(){
+ let csv="วันที่,ประเภท,หมวดหมู่,จำนวนเงิน\n";
+ transactions.forEach(t=>{
+  csv+=`${t.date},${t.type},${t.category},${t.amount}\n`;
+ });
+ let blob=new Blob([csv],{type:"text/csv"});
+ let a=document.createElement("a");
+ a.href=URL.createObjectURL(blob);
+ a.download="money-report.csv";
+ a.click();
+}
+
+function toggleDarkMode(){
+ document.body.classList.toggle("dark");
+}
+
+render();
+</script>
+</body>
+</html>
